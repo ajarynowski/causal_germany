@@ -1,0 +1,278 @@
+---
+title: "NETCHECK_COVIMOD temporal comparison"
+author: "Thi Phuong Huynh"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    toc_float: true # able of contents to the left, visible even when the document is scrolled
+editor_options: 
+  chunk_output_type: console
+---
+
+# set up
+
+Date: <b>`r format(Sys.Date(), "%B %d, %Y")`</b>
+
+All computations were performed with `r R.Version()$version.string`.
+
+```{r set up, include=FALSE,}
+rm(list=ls())
+Sys.setenv(LANG = "en")
+knitr::opts_chunk$set(fig.retina = 1, fig.height = 7, fig.width = 14,
+                       echo = FALSE, message = FALSE, warning = FALSE,           results='hide')
+
+Sys.setlocale("LC_TIME", "C")
+BEGIN_RMD <- Sys.time() # Keeping track of running time
+Sys.setenv(LANG = "en")
+set.seed(75876342)
+options(warn = 1) # If warn is 1, warnings are printed as they occur.
+
+# library loading
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(table1)
+library(reshape2)
+library(DescTools)
+library(data.table)
+library(ggpubr)
+library(gridExtra)
+library(grid)
+library(ggh4x)
+
+# library(scales)
+# library(stringr)
+# library(socialmixr) # social contact matrice
+# library(gridExtra)
+# library(grid)
+# library(boot)
+
+# This make sure wd is consitent when knit
+#actual path to your R Markdown file's directory.
+# knitr::opts_knit$set(root.dir = "C:/Users/huynh/Desktop/GIT_workspace/OptimAgent/OptimAgent_GIT_v2/codes")
+setwd("A:/OptimAgent/OptimAgent_GIT_v2/codes")
+
+#
+source("./data_prepare/function_boot_mean.R")
+# source("./codes/data_prepare/functions.R")
+# source("./codes/data_prepare/function_cnt.R")
+source("./data_prepare/function_bootstrap.R")
+cov <-read.csv("A:/OptimAgent/OptimAgent_GIT_v2/data/processed/basic_contacts_information/contact_byWave.csv")
+net <-read.csv("A:/OptimAgent/OptimAgent_GIT_v2/data/processed/basic_contacts_information/contact_mobile_netcheck.csv")
+load("A:/OptimAgent/OptimAgent_GIT_v2/data/processed/data_MONID_poster.Rdata")
+
+data_sel <- cov%>%select(wave,Stri,dataset,mean_contact, mean_contact_norm)
+data_sel <- data_sel%>%pivot_wider(names_from = dataset,
+                                 values_from = c("mean_contact","mean_contact_norm"))
+names(data_sel) <- c("")
+
+
+```
+
+# Mediator is netcheck
+
+```{r}
+#library("mediation")
+#glimpse(data_sel)
+#step1: outcome ~ independent variable
+fit.totaleffect = lm(COVIMOD~Stri,data_sel)
+summary(fit.totaleffect) #0.27, R2 = 0.075
+#Step 2 : mediator ~independent variable
+fit.mediator = lm(NETCHECK~Stri,data_sel) 
+summary(fit.mediator) #0.74, R2 = 0.55 
+#Step 3: outcome ~ mediator + independent variable
+fit.dv = lm(COVIMOD~Stri+NETCHECK,data_sel)
+summary(fit.dv) #0.36, 0.003 R2 = 0.13
+#Step 4: treat is independent variable
+results = mediate(fit.mediator, fit.dv, treat='Stri', mediator='NETCHECK', boot=T)
+summary(results)
+#Causal Mediation Analysis  Nonparametric Bootstrap Confidence Intervals with the Percentile Method
+# explanation mediation: https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171 
+
+
+```
+
+
+# Mediator is covimod
+
+```{r}
+#library("mediation")
+#glimpse(data_sel)
+#step1: outcome ~ independent variable
+fit.totaleffect = lm(NETCHECK~Stri,data_sel)
+summary(fit.totaleffect) #0.27, R2 = 0.075
+#Step 2 : mediator ~independent variable
+fit.mediator = lm(COVIMOD~Stri,data_sel) 
+summary(fit.mediator) #0.74, R2 = 0.55 
+#Step 3: outcome ~ mediator + independent variable
+fit.dv = lm(NETCHECK~Stri+COVIMOD,data_sel)
+summary(fit.dv) #0.36, 0.003 R2 = 0.13
+#Step 4: treat is independent variable
+results = mediate(fit.mediator, fit.dv, treat='Stri', mediator='COVIMOD', boot=T)
+summary(results)
+#Causal Mediation Analysis  Nonparametric Bootstrap Confidence Intervals with the Percentile Method
+# explanation mediation: https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171 
+
+
+```
+
+# Mediator is stringency
+
+
+```{r}
+#library("mediation")
+#glimpse(data_sel)
+#step1: outcome ~ independent variable
+fit.totaleffect = lm(NETCHECK~COVIMOD,data_sel)
+summary(fit.totaleffect) #0.27, R2 = 0.075
+#Step 2 : mediator ~independent variable
+fit.mediator = lm(Stri~COVIMOD,data_sel) 
+summary(fit.mediator) #0.74, R2 = 0.55 
+#Step 3: outcome ~ mediator + independent variable
+fit.dv = lm(NETCHECK~Stri+COVIMOD,data_sel)
+summary(fit.dv) #0.36, 0.003 R2 = 0.13
+#Step 4: treat is independent variable
+results = mediate(fit.mediator, fit.dv, treat='COVIMOD', mediator='Stri', boot=T)
+summary(results)
+#Causal Mediation Analysis  Nonparametric Bootstrap Confidence Intervals with the Percentile Method
+# explanation mediation: https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171 
+
+
+```
+
+```{r}
+# Function to maximize correlation between Rt and Cindex
+maximize_correlation <- function(Rt, COVIDMOD, NETHECK) {
+  
+  # Define the correlation function for optimization
+  cor_fun <- function(a) {
+    Cindex <- a * COVIDMOD + (1 - a) * NETHECK
+    return(abs(cor(Rt, Cindex))) # Negative to maximize
+  }
+  
+  # Optimize using Brent's method (efficient and robust for univariate cases)
+  optim_result <- optim(par = 0.5, # Start searching at a = 0.5
+                       fn = cor_fun, 
+                       method = "Brent", 
+                       lower = 0, upper = 1) # Ensure a is between 0 and 1
+  
+  # Extract and return the optimal 'a' value and the corresponding Cindex
+  best_a <- optim_result$par
+  best_Cindex <- best_a * COVIDMOD + (1 - best_a) * NETHECK
+  return(list(best_a = best_a, best_Cindex = best_Cindex))
+}
+
+# Example usage (replace with your actual data):
+Rt <- data_sel$R_0
+COVIDMOD <- data$COVIMOD
+NETHECK <- data_sel$NETCHECK
+
+results <- maximize_correlation(Rt, COVIDMOD, NETHECK)
+print(paste("Optimal a:", results$best_a))
+print(paste("Maximum correlation:", cor(Rt, results$best_Cindex)))
+
+```
+
+
+```{r}
+# Function to maximize correlation between Rt and Cindex
+maximize_correlation <- function(Rt, COVIDMOD, NETHECK, n) {
+  
+  # Define the correlation function for optimization
+  cor_fun <- function(a) {
+    Cindex <- a * COVIDMOD + (1 - a) * NETHECK
+    lagged_Rt <- Rt[(n + 1):length(Rt)]  
+    lagged_Cindex <- Cindex[1:(length(Cindex) - n)]
+    return(abs(cor(lagged_Rt, lagged_Cindex))) # Negative to maximize
+  }
+  
+  # Optimize using Brent's method (efficient and robust for univariate cases)
+  optim_result <- optim(par = 0.5, # Start searching at a = 0.5
+                       fn = cor_fun, 
+                       method = "Brent", 
+                       lower = 0, upper = 1) # Ensure a is between 0 and 1
+  
+  # Extract and return the optimal 'a' value and the corresponding Cindex
+  best_a <- optim_result$par
+  best_Cindex <- best_a * COVIDMOD + (1 - best_a) * NETHECK
+  return(list(best_a = best_a, best_Cindex = best_Cindex))
+}
+
+# Example usage (replace with your actual data):
+Rt <- data_sel$R_0
+COVIDMOD <- data$COVIMOD
+NETHECK <- data_sel$NETCHECK
+
+results <- maximize_correlation(Rt, COVIDMOD, NETHECK,3)
+print(paste("Optimal a:", results$best_a))
+print(paste("Maximum correlation:", cor(Rt, results$best_Cindex)))
+
+```
+
+
+```{r}
+# Function to maximize correlation between Rt and Cindex
+maximize_correlation <- function(Rt, COVIDMOD, NETHECK, n) {
+  
+  # Define the correlation function for optimization
+  cor_fun <- function(a) {
+    Cindex <- a * COVIDMOD + (1 - a) * NETHECK
+    lagged_Cindex <- Cindex[(n + 1):length(Cindex)]  
+     lagged_Rt  <- Rt[1:(length(Rt) - n)]
+    return(abs(cor(lagged_Rt, lagged_Cindex))) # Negative to maximize
+  }
+  
+  # Optimize using Brent's method (efficient and robust for univariate cases)
+  optim_result <- optim(par = 0.5, # Start searching at a = 0.5
+                       fn = cor_fun, 
+                       method = "Brent", 
+                       lower = 0, upper = 1) # Ensure a is between 0 and 1
+  
+  # Extract and return the optimal 'a' value and the corresponding Cindex
+  best_a <- optim_result$par
+  best_Cindex <- best_a * COVIDMOD + (1 - best_a) * NETHECK
+  return(list(best_a = best_a, best_Cindex = best_Cindex))
+}
+
+# Example usage (replace with your actual data):
+Rt <- data_sel$R_0
+COVIDMOD <- data$COVIMOD
+NETHECK <- data_sel$NETCHECK
+
+results <- maximize_correlation(Rt, COVIDMOD, NETHECK,1)
+print(paste("Optimal a:", results$best_a))
+print(paste("Maximum correlation:", cor(Rt, results$best_Cindex)))
+
+```
+
+
+
+```{r}
+#library(dplyr)
+
+# Define the solver function
+maximize_correlation <- function(data_sel) {
+  # Define a function to calculate the negative correlation for a given 'a'
+  correlation_function <- function(a) {
+    Cindex <- a * data_sel$COVIDMOD + (1 - a) * data_sel$NETHECK
+    abs(cor(data_sel$R0, Cindex))
+  }
+  
+  # Use optimize function to find the value of 'a' that minimizes the negative correlation
+  result <- optimize(correlation_function, interval = c(0, 1))
+  
+  # Extract the best 'a' and corresponding maximum correlation
+  best_a <- result$minimum
+  best_Cindex <- best_a * data_sel$COVIDMOD + (1 - best_a) * data_sel$NETHECK
+  max_correlation <- abs(cor(data_sel$R0, best_Cindex))
+  
+  return(list(best_a = best_a, max_correlation = max_correlation))
+}
+
+# Example usage with data_sel data frame
+# Assuming data_sel is your data frame with Rt, COVIDMOD, and NETHECK columns
+# data_sel <- data.frame(Rt = ..., COVIDMOD = ..., NETHECK = ...)
+result <- maximize_correlation(data_sel)
+print(result)
+```
